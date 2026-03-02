@@ -1,54 +1,106 @@
-import { useState } from "react";
-import { generateText } from "@/utils/ai";
-import { sendEmail } from "@/utils/email";
-import { trackEvent } from "@/utils/track";
+import { useState, useEffect } from "react";
+import { useAction } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { ShareButtons } from "@/components/ShareButtons";
 
+const TIMEZONE_OPTIONS = [
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "America/Honolulu",
+  "America/Phoenix",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Rome",
+  "Europe/Moscow",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Bangkok",
+  "Asia/Shanghai",
+  "Asia/Tokyo",
+  "Asia/Seoul",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+];
+
 export default function Index() {
-  const [aiResult, setAiResult] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [emailTo, setEmailTo] = useState("");
-  const [emailResult, setEmailResult] = useState<string | null>(null);
-  const [emailLoading, setEmailLoading] = useState(false);
+  const [telegramUsername, setTelegramUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [timezone, setTimezone] = useState("");
+  const [age, setAge] = useState("");
+  const [weightLbs, setWeightLbs] = useState("");
+  const [gender, setGender] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [calorieTarget, setCalorieTarget] = useState<number | null>(null);
 
-  const handleTestAI = async () => {
-    setLoading(true);
-    setAiResult(null);
-    trackEvent("test_ai_click", {});
-    try {
-      const { text } = await generateText({ prompt: "Say hello in one sentence." });
-      setAiResult(text || "(no response)");
-    } catch (e) {
-      setAiResult("Error: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setLoading(false);
+  const submitLead = useAction(api.leads.submitLead);
+  const registerUser = useAction(api.users.registerUser);
+
+  useEffect(() => {
+    setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  }, []);
+
+  const timezoneOptions = (() => {
+    const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (detected && !TIMEZONE_OPTIONS.includes(detected)) {
+      return [detected, ...TIMEZONE_OPTIONS];
     }
-  };
+    return TIMEZONE_OPTIONS;
+  })();
 
-  const handleTestEmail = async () => {
-    const to = emailTo.trim();
-    if (!to) {
-      setEmailResult("Enter an email address to send a test to.");
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (
+      !telegramUsername.trim() ||
+      !email.trim() ||
+      !timezone.trim() ||
+      !age.trim() ||
+      !weightLbs.trim() ||
+      !gender.trim()
+    ) {
+      setStatus("error");
+      setErrorMessage("Please fill in all fields.");
       return;
     }
-    setEmailLoading(true);
-    setEmailResult(null);
-    trackEvent("test_email_click", {});
+    if (parseInt(age, 10) <= 0 || isNaN(parseInt(age, 10))) {
+      setStatus("error");
+      setErrorMessage("Please enter a valid age.");
+      return;
+    }
+    if (parseFloat(weightLbs) <= 0 || isNaN(parseFloat(weightLbs))) {
+      setStatus("error");
+      setErrorMessage("Please enter a valid weight.");
+      return;
+    }
+
+    setStatus("loading");
+
+    submitLead({
+      challengeId: import.meta.env.VITE_CHALLENGE_ID ?? "calorie-counter",
+      email,
+    }).catch(() => {});
+
     try {
-      const result = await sendEmail(
-        to,
-        "One Shot – test email",
-        "<p>If you got this, email is working.</p>"
+      const result = await registerUser({
+        telegramUsername: telegramUsername.replace(/^@/, ""),
+        email,
+        timezone,
+        age: parseInt(age, 10),
+        weightLbs: parseFloat(weightLbs),
+        gender,
+      });
+      setCalorieTarget(result.calorieTarget);
+      setStatus("success");
+    } catch (err) {
+      setStatus("error");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Something went wrong. Please try again."
       );
-      if (result.success) {
-        setEmailResult(`Sent! Check ${to} for the test email.`);
-      } else {
-        setEmailResult("Error: " + result.error);
-      }
-    } catch (e) {
-      setEmailResult("Error: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setEmailLoading(false);
     }
   };
 
@@ -60,7 +112,7 @@ export default function Index() {
           "linear-gradient(135deg, var(--background) 0%, rgba(0,194,255,0.07) 40%, rgba(255,90,95,0.06) 70%, var(--background) 100%)",
       }}
     >
-      {/* Small corner accent: keeps the vibe without covering text on any screen size */}
+      {/* Corner accents */}
       <div
         className="absolute top-0 right-0 w-24 sm:w-40 h-40 sm:h-64 rounded-bl-[3rem] opacity-80"
         style={{ backgroundColor: "var(--accent-coral)" }}
@@ -73,98 +125,210 @@ export default function Index() {
       />
 
       <main className="relative z-10 max-w-4xl mx-auto px-6 py-20 sm:py-28">
+        {/* 1. Hero */}
         <section className="text-center mb-20">
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight mb-6">
-            <span className="block">One Shot.</span>
+            <span className="block">The Easiest Calorie</span>
             <span
               className="block mt-2 bg-clip-text text-transparent"
               style={{
                 backgroundImage: "linear-gradient(135deg, var(--accent-coral), var(--accent-sky))",
               }}
             >
-              Make it count.
+              Counter Ever
             </span>
           </h1>
           <p className="text-xl sm:text-2xl text-gray-600 max-w-2xl mx-auto mb-12 leading-relaxed">
-            A template for building AI-powered demos in one shot. Replace this with your challenge.
+            Just text what you ate. We handle the math.
           </p>
-          <button
-            type="button"
-            onClick={handleTestAI}
-            disabled={loading}
-            className="px-8 py-4 text-lg font-semibold rounded-2xl text-white shadow-lg hover:opacity-95 disabled:opacity-60 transition-opacity"
+          <a
+            href="#signup"
+            className="inline-block px-8 py-4 text-lg font-semibold rounded-2xl text-white shadow-lg hover:opacity-95 transition-opacity"
             style={{ backgroundColor: "var(--accent-coral)" }}
           >
-            {loading ? "Calling AI…" : "Test AI"}
-          </button>
+            Get Started Free
+          </a>
         </section>
 
-        <section className="mt-16 p-8 rounded-3xl border-2 border-gray-100 bg-white/80 backdrop-blur">
-          <h2 className="text-2xl font-bold mb-4">Result</h2>
-          {aiResult === null ? (
-            <p className="text-gray-500">Click “Test AI” to see the model response here.</p>
-          ) : (
-            <p className="text-gray-800 leading-relaxed">{aiResult}</p>
-          )}
-        </section>
-
-        <section className="mt-8 p-8 rounded-3xl border-2 border-gray-100 bg-white/80 backdrop-blur">
-          <h2 className="text-2xl font-bold mb-4">Test email</h2>
-          <p className="text-gray-600 mb-4">
-            Send a test email to verify Resend is configured (set RESEND_API_KEY and RESEND_FROM in Convex env).
-          </p>
-          <div className="flex flex-wrap gap-3 items-end">
-            <label className="flex-1 min-w-[200px]">
-              <span className="block text-sm font-medium text-gray-700 mb-1">To</span>
-              <input
-                type="email"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none"
-              />
-            </label>
-            <button
-              type="button"
-              onClick={handleTestEmail}
-              disabled={emailLoading}
-              className="px-6 py-2.5 font-semibold rounded-xl text-white shadow hover:opacity-95 disabled:opacity-60 transition-opacity"
-              style={{ backgroundColor: "var(--accent-sky)" }}
-            >
-              {emailLoading ? "Sending…" : "Send test email"}
-            </button>
+        {/* 2. Video Placeholder */}
+        <section className="max-w-3xl mx-auto mb-20">
+          <div
+            id="video-placeholder"
+            className="aspect-video rounded-2xl bg-gray-100 border-2 border-gray-200 flex items-center justify-center"
+          >
+            <p className="text-gray-400 text-lg font-medium">Video coming soon</p>
           </div>
-          {emailResult !== null && (
-            <p className={`mt-4 ${emailResult.startsWith("Error") || emailResult.startsWith("Enter") ? "text-red-600" : "text-gray-800"}`}>
-              {emailResult}
-            </p>
-          )}
         </section>
 
-        <ShareButtons />
+        {/* 3. How It Works */}
+        <section className="mb-20">
+          <h2 className="text-3xl sm:text-4xl font-bold text-center mb-10">How It Works</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[
+              {
+                step: "1",
+                title: "Sign Up",
+                body: "Enter a few stats and get a personalized daily calorie target calculated just for you.",
+              },
+              {
+                step: "2",
+                title: "Text the Bot",
+                body: "Message the bot what you ate, any time. No apps, no logging in — just send a message.",
+              },
+              {
+                step: "3",
+                title: "Track Your Budget",
+                body: "Get an instant running total after every meal. Three daily nudges keep you on track.",
+              },
+            ].map(({ step, title, body }) => (
+              <div
+                key={step}
+                className="rounded-3xl border-2 border-gray-100 bg-white/80 backdrop-blur p-8"
+              >
+                <div
+                  className="text-5xl font-extrabold mb-4 bg-clip-text text-transparent"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(135deg, var(--accent-coral), var(--accent-sky))",
+                  }}
+                >
+                  {step}
+                </div>
+                <h3 className="text-xl font-bold mb-2">{title}</h3>
+                <p className="text-gray-600 leading-relaxed">{body}</p>
+              </div>
+            ))}
+          </div>
+        </section>
 
-        <div className="mt-20 flex flex-wrap gap-4 justify-center">
-          <span
-            className="inline-block w-3 h-3 rounded-full"
-            style={{ backgroundColor: "var(--accent-coral)" }}
-            aria-hidden
-          />
-          <span
-            className="inline-block w-3 h-3 rounded-full"
-            style={{ backgroundColor: "#8b5cf6" }}
-            aria-hidden
-          />
-          <span
-            className="inline-block w-3 h-3 rounded-full"
-            style={{ backgroundColor: "var(--accent-sky)" }}
-            aria-hidden
-          />
-          <span
-            className="inline-block w-3 h-3 rounded-full"
-            style={{ backgroundColor: "#f59e0b" }}
-            aria-hidden
-          />
-        </div>
+        {/* 4. Signup Form */}
+        <section id="signup" className="mb-20">
+          <div className="rounded-3xl border-2 border-gray-100 bg-white/80 backdrop-blur p-8 max-w-2xl mx-auto">
+            <h2 className="text-3xl font-bold mb-6 text-center">Get Your Calorie Target</h2>
+
+            {status !== "success" ? (
+              <form onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Email */}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-gray-700">Email</span>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="rounded-lg border border-gray-300 px-4 py-2.5 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none"
+                      disabled={status === "loading"}
+                    />
+                  </label>
+
+                  {/* Telegram Username */}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-gray-700">Telegram Username</span>
+                    <input
+                      type="text"
+                      value={telegramUsername}
+                      onChange={(e) => setTelegramUsername(e.target.value)}
+                      placeholder="@yourusername"
+                      className="rounded-lg border border-gray-300 px-4 py-2.5 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none"
+                      disabled={status === "loading"}
+                    />
+                  </label>
+
+                  {/* Timezone */}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-gray-700">Timezone</span>
+                    <select
+                      value={timezone}
+                      onChange={(e) => setTimezone(e.target.value)}
+                      className="rounded-lg border border-gray-300 px-4 py-2.5 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none bg-white"
+                      disabled={status === "loading"}
+                    >
+                      <option value="">Select timezone</option>
+                      {timezoneOptions.map((tz) => (
+                        <option key={tz} value={tz}>
+                          {tz}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  {/* Age */}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-gray-700">Age</span>
+                    <input
+                      type="number"
+                      value={age}
+                      onChange={(e) => setAge(e.target.value)}
+                      placeholder="32"
+                      min={1}
+                      max={120}
+                      className="rounded-lg border border-gray-300 px-4 py-2.5 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none"
+                      disabled={status === "loading"}
+                    />
+                  </label>
+
+                  {/* Weight */}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-gray-700">Weight (lbs)</span>
+                    <input
+                      type="number"
+                      value={weightLbs}
+                      onChange={(e) => setWeightLbs(e.target.value)}
+                      placeholder="165"
+                      min={50}
+                      max={600}
+                      step={0.1}
+                      className="rounded-lg border border-gray-300 px-4 py-2.5 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none"
+                      disabled={status === "loading"}
+                    />
+                  </label>
+
+                  {/* Gender */}
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-gray-700">Gender</span>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="rounded-lg border border-gray-300 px-4 py-2.5 focus:ring-2 focus:ring-[var(--accent-sky)] focus:border-transparent outline-none bg-white"
+                      disabled={status === "loading"}
+                    >
+                      <option value="">Select gender</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </label>
+
+                  {/* Submit */}
+                  <button
+                    type="submit"
+                    disabled={status === "loading"}
+                    className="col-span-full mt-2 w-full px-8 py-4 text-lg font-semibold rounded-2xl text-white shadow-lg hover:opacity-95 disabled:opacity-60 transition-opacity"
+                    style={{ backgroundColor: "var(--accent-coral)" }}
+                  >
+                    {status === "loading" ? "Calculating…" : "Get My Calorie Target"}
+                  </button>
+                </div>
+
+                {status === "error" && (
+                  <p className="mt-4 text-red-600 text-sm">{errorMessage}</p>
+                )}
+              </form>
+            ) : (
+              <div className="rounded-2xl border-2 border-green-200 bg-green-50 p-8 text-center">
+                <p className="text-xl text-gray-800 leading-relaxed">
+                  You're all set! Your daily calorie target is{" "}
+                  <strong className="text-2xl">{calorieTarget} cal/day</strong>. Find the bot on
+                  Telegram and send it your first meal to start tracking.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* 5. Share Buttons */}
+        <ShareButtons />
       </main>
     </div>
   );

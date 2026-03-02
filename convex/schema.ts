@@ -34,4 +34,28 @@ export default defineSchema({
   })
     .index("by_challengeId", ["challengeId"])
     .index("by_challenge_and_email", ["challengeId", "email"]),
+
+  users: defineTable({
+    chatId: v.string(),
+    telegramUsername: v.optional(v.string()),
+    email: v.string(),
+    timezone: v.string(),
+    age: v.number(),
+    weightLbs: v.number(),
+    gender: v.string(),
+    calorieTarget: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_chatId", ["chatId"])
+    .index("by_telegramUsername", ["telegramUsername"]),
+
+  meals: defineTable({
+    chatId: v.string(),
+    description: v.string(),
+    calories: v.number(),
+    dayKey: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_chatId_and_dayKey", ["chatId", "dayKey"])
+    .index("by_chatId_and_createdAt", ["chatId", "createdAt"]),
 });

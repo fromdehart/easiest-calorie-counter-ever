@@ -13,13 +13,17 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as bot from "../bot.js";
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as leads from "../leads.js";
+import type * as meals from "../meals.js";
 import type * as openai from "../openai.js";
 import type * as resend from "../resend.js";
 import type * as telegram from "../telegram.js";
 import type * as telegramClient from "../telegramClient.js";
 import type * as tracking from "../tracking.js";
+import type * as users from "../users.js";
 import type * as votes from "../votes.js";
 
 /**
@@ -31,13 +35,17 @@ import type * as votes from "../votes.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  bot: typeof bot;
+  crons: typeof crons;
   http: typeof http;
   leads: typeof leads;
+  meals: typeof meals;
   openai: typeof openai;
   resend: typeof resend;
   telegram: typeof telegram;
   telegramClient: typeof telegramClient;
   tracking: typeof tracking;
+  users: typeof users;
   votes: typeof votes;
 }>;
 export declare const api: FilterApi<

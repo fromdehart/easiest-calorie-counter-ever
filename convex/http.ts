@@ -52,6 +52,13 @@ http.route({
         text: text ?? undefined,
         updateId,
       });
+      if (text !== undefined && text.trim() !== "") {
+        await ctx.runAction(internal.bot.handleMessage, {
+          chatId,
+          text,
+          username: from?.username,
+        });
+      }
     }
 
     return new Response(null, { status: 200 });
