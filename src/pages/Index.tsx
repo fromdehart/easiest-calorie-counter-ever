@@ -124,10 +124,10 @@ export default function Index() {
         aria-hidden
       />
 
-      <main className="relative z-10 max-w-4xl mx-auto px-6 py-20 sm:py-28">
+      <main className="relative z-10 max-w-4xl mx-auto px-6 pt-10 sm:pt-14 pb-20">
         {/* 1. Hero */}
-        <section className="text-center mb-20">
-          <h1 className="text-5xl sm:text-6xl md:text-7xl font-extrabold tracking-tight mb-6">
+        <section className="text-center mb-6">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight mb-4">
             <span className="block">The Easiest Calorie</span>
             <span
               className="block mt-2 bg-clip-text text-transparent"
@@ -138,7 +138,7 @@ export default function Index() {
               Counter Ever
             </span>
           </h1>
-          <p className="text-xl sm:text-2xl text-gray-600 max-w-2xl mx-auto mb-12 leading-relaxed">
+          <p className="text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto mb-6 leading-relaxed">
             Just text what you ate. We handle the math.
           </p>
           <a
