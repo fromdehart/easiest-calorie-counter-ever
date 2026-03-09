@@ -41,20 +41,39 @@ const nudgeMessages: Record<number, string> = {
   20: "Evening check-in — what did you have for dinner or any snacks today? 🌙",
 };
 
-async function estimateCalories(
-  ctx: { runAction: (ref: unknown, args: unknown) => Promise<{ text: string; responseId: string }> },
-  description: string
-): Promise<number> {
-  const { text } = await (ctx.runAction as (ref: unknown, args: unknown) => Promise<{ text: string; responseId: string }>)(
-    api.openai.generateText,
-    {
-      prompt: description,
-      systemPrompt:
-        "You are a calorie estimator. Reply with a single integer — the estimated total calories for the described meal or snack. No other text.",
-    }
-  );
-  const n = parseInt(text.trim(), 10);
-  return isNaN(n) ? 0 : n;
+type RunAction = (ref: unknown, args: unknown) => Promise<{ text: string; responseId: string }>;
+type RunQuery = (ref: unknown, args: unknown) => Promise<unknown>;
+
+async function classifyAndEstimate(
+  ctx: { runAction: RunAction; runQuery: RunQuery },
+  message: string,
+  chatId: string
+): Promise<{ intent: "new" | "edit"; calories: number }> {
+  const lastMeal = await (ctx.runQuery as RunQuery)(internal.meals.getLastMeal, { chatId }) as
+    | { description: string; calories: number }
+    | null;
+
+  const context = lastMeal
+    ? `Last logged meal: "${lastMeal.description}" (~${lastMeal.calories} cal)\n`
+    : "";
+
+  const { text } = await (ctx.runAction as RunAction)(api.openai.generateText, {
+    prompt: `${context}New message: "${message}"`,
+    systemPrompt:
+      'You are a calorie tracking assistant. Given a user\'s message and their last logged meal, decide: is this a NEW meal to add, or a CORRECTION/edit to the last meal? Also estimate calories for what was described.\n\nReply with JSON only, no other text: {"intent":"new","calories":500} or {"intent":"edit","calories":350}',
+    model: "gpt-4o-mini",
+  });
+
+  try {
+    const parsed = JSON.parse(text.trim()) as { intent: string; calories: number };
+    const intent = parsed.intent === "edit" ? "edit" : "new";
+    const calories = isNaN(parsed.calories) ? 0 : parsed.calories;
+    return { intent, calories };
+  } catch {
+    // Fallback: treat as new meal, try to parse just a number
+    const n = parseInt(text.trim(), 10);
+    return { intent: "new", calories: isNaN(n) ? 0 : n };
+  }
 }
 
 async function sendReply(
@@ -92,12 +111,18 @@ export const handleMessage = internalAction({
       return null;
     }
 
-    // Link real numeric chatId if we matched by username
+    // Link real numeric chatId if we matched by username (first message = onboarding)
     if (user.chatId !== chatId) {
       await ctx.runMutation(internal.users.linkChatId, {
         userId: user._id,
         chatId,
       });
+      await sendReply(
+        ctx,
+        chatId,
+        `Welcome! 🎉 You're all set.\n\nYour daily calorie target: *${user.calorieTarget} cal/day*\n\nJust text me what you ate and I'll track it:\n_"2 eggs and toast"_\n_"chicken burrito"_\n\nOther commands:\n• /total — see today's running total\n• /edit <description> — fix your last entry\n• /settarget <calories> — update your daily goal`
+      );
+      return null;
     }
 
     const trimmed = text.trim();
@@ -125,7 +150,7 @@ export const handleMessage = internalAction({
         await sendReply(ctx, chatId, "Usage: /edit <what you actually had>");
         return null;
       }
-      const calories = await estimateCalories(ctx, description);
+      const { calories } = await classifyAndEstimate(ctx, description, chatId);
       const patched = await ctx.runMutation(internal.meals.patchLastMeal, {
         chatId,
         description,
@@ -173,19 +198,35 @@ export const handleMessage = internalAction({
       return null;
     }
 
-    // 6. Free-text meal log
-    const calories = await estimateCalories(ctx, trimmed);
+    // 6. Free-text: classify intent and estimate calories in one LLM call
+    const { intent, calories } = await classifyAndEstimate(ctx, trimmed, chatId);
     const dayKey = getDayKey(Date.now(), user.timezone);
+
+    if (intent === "edit") {
+      const patched = await ctx.runMutation(internal.meals.patchLastMeal, {
+        chatId,
+        description: trimmed,
+        calories,
+      });
+      if (patched) {
+        const total = await ctx.runQuery(internal.meals.getDailyCalories, { chatId, dayKey });
+        await sendReply(
+          ctx,
+          chatId,
+          `Got it, updated! ~${calories} cal.\n${buildTotalsLine(total, user.calorieTarget)}`
+        );
+        return null;
+      }
+      // Nothing to patch — fall through and log as new
+    }
+
     await ctx.runMutation(internal.meals.insertMeal, {
       chatId,
       description: trimmed,
       calories,
       dayKey,
     });
-    const total = await ctx.runQuery(internal.meals.getDailyCalories, {
-      chatId,
-      dayKey,
-    });
+    const total = await ctx.runQuery(internal.meals.getDailyCalories, { chatId, dayKey });
     await sendReply(
       ctx,
       chatId,
